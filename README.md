@@ -47,7 +47,8 @@ Same decision, same evidence, nothing that needed the thread to understand.
 
 The skill is one file — [`skills/mucho-texto/SKILL.md`](skills/mucho-texto/SKILL.md) — written as
 plain Markdown with no harness-specific syntax in the body. Every install path below puts that
-same body somewhere your agent reads. Pick the one that matches your tool.
+same body somewhere your agent reads, rewriting nothing but the frontmatter. Pick the one that
+matches your tool.
 
 ### Claude Code
 
@@ -92,20 +93,47 @@ Installed with `alwaysApply: false` and the skill's description in the frontmatt
 pulls it in when it's relevant rather than on every turn. Reference it directly with
 `@mucho-texto`.
 
-### Anything else
+### Without running anything
+
+[`dist/`](dist) holds the same adapters pre-built, for copying by hand:
+
+- [`dist/AGENTS.md`](dist/AGENTS.md) — paste into your project's `AGENTS.md`, or use it as one
+  if you don't have it yet. It keeps the same comment delimiters `install.sh` uses, so you can
+  hand it over to the script later and `--uninstall` will still find it.
+- [`dist/mucho-texto.mdc`](dist/mucho-texto.mdc) — drop into `.cursor/rules/`.
+
+These are generated from `SKILL.md`, byte-identical to what `install.sh` writes, and CI fails if
+they drift. Regenerate with `./install.sh --build`.
+
+For anything else — a system prompt, a custom GPT, a rules file with its own format:
 
 ```bash
 ./install.sh --target print
 ```
 
-Writes the harness-agnostic body to stdout. Paste it wherever your agent takes standing
-instructions — a system prompt, a rules file, a custom GPT, a `.md` your harness loads.
+Writes the harness-agnostic body to stdout, no frontmatter, no markers.
 
 ### Uninstall
 
 `./install.sh --target <same-target> --uninstall`. It only removes what it installed: each
 target leaves a marker (a `.mucho-texto-managed` file, or the comment delimiters) and refuses to
 touch anything it did not write.
+
+## Layout
+
+```
+skills/mucho-texto/SKILL.md    the skill — the only copy of the content
+dist/AGENTS.md                 generated adapter, for AGENTS.md-family harnesses
+dist/mucho-texto.mdc           generated adapter, for Cursor
+.claude-plugin/                plugin + marketplace manifests
+install.sh                     adapters over SKILL.md, and --build for dist/
+```
+
+Nothing that an agent auto-loads lives at the repo root — no `AGENTS.md`, no `CLAUDE.md`, no
+`SKILL.md`. Those paths belong to *your* project, not to a repo you cloned to install something.
+A root `AGENTS.md` here would be picked up by any agent you pointed at this clone, and would
+collide with `./install.sh --target agents` if you ran it from the wrong directory. The
+distributable copy lives in `dist/` instead, where it is inert until you move it.
 
 ## Using it
 

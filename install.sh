@@ -14,10 +14,12 @@ MARKER_END="<!-- END mucho-texto -->"
 TARGET="claude"
 ASSUME_YES=0
 UNINSTALL=0
+BUILD=0
 
 usage() {
   cat <<'EOF'
 Usage: ./install.sh [--target <harness>] [--yes] [--uninstall]
+       ./install.sh --build
 
 Targets:
   claude     ~/.claude/skills/mucho-texto/SKILL.md          (default)
@@ -30,6 +32,8 @@ Targets:
 Flags:
   --yes, -y    do not prompt before overwriting an unmanaged file
   --uninstall  remove what this script installed for the chosen target
+  --build      regenerate dist/ from skills/mucho-texto/SKILL.md — for
+               maintainers of this repo, not for installing
 
 Claude Code users can skip this script entirely:
   /plugin marketplace add troopdegen/mucho-texto
@@ -43,6 +47,7 @@ while [ $# -gt 0 ]; do
     --target=*) TARGET="${1#*=}"; shift ;;
     --yes|-y) ASSUME_YES=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
+    --build) BUILD=1; shift ;;
     --help|-h) usage; exit 0 ;;
     *) echo "unknown flag: $1" >&2; usage >&2; exit 1 ;;
   esac
@@ -61,9 +66,16 @@ fi
 
 # --- helpers -----------------------------------------------------------------
 
-# Everything after the closing --- of the YAML frontmatter.
+# Everything after the closing --- of the YAML frontmatter, with the blank
+# lines that follow it dropped so callers control their own spacing.
 skill_body() {
-  awk 'BEGIN{n=0} /^---[[:space:]]*$/{n++; if(n<=2) next} n>=2' "$SKILL_SRC"
+  awk '
+    BEGIN { n = 0; started = 0 }
+    /^---[[:space:]]*$/ { n++; if (n <= 2) next }
+    n < 2 { next }
+    !started && /^[[:space:]]*$/ { next }
+    { started = 1; print }
+  ' "$SKILL_SRC"
 }
 
 # The description: line from the frontmatter, unwrapped onto one line.
@@ -85,6 +97,22 @@ confirm_overwrite() {
   case "$reply" in [yY]|[yY][eE][sS]) return 0 ;; *) return 1 ;; esac
 }
 
+# Drop the managed block wherever it appears, and trim the trailing blank
+# lines left behind. Write and remove both go through this, so removing a
+# block restores the file byte-for-byte to what it was before it was added.
+strip_managed_block() {
+  awk -v b="$MARKER_BEGIN" -v e="$MARKER_END" '
+    $0 == b { skip = 1; next }
+    $0 == e { skip = 0; next }
+    !skip
+  ' "$1" | awk '
+    # Buffer blank lines and emit them only once a non-blank follows, so any
+    # run of blanks at end of file is dropped rather than printed.
+    /^[[:space:]]*$/ { blank++; next }
+    { for (i = 0; i < blank; i++) print ""; blank = 0; print }
+  '
+}
+
 # Replace (or append) the managed block inside a file the user also curates
 # by hand. Idempotent: running twice leaves one block, not two.
 write_managed_block() {
@@ -93,12 +121,7 @@ write_managed_block() {
   mkdir -p "$(dirname "$file")"
   touch "$file"
 
-  # Strip any previous block, then trim trailing blank lines.
-  awk -v b="$MARKER_BEGIN" -v e="$MARKER_END" '
-    $0 == b { skip=1; next }
-    $0 == e { skip=0; next }
-    !skip
-  ' "$file" | awk 'BEGIN{blank=0} {if($0 ~ /^[[:space:]]*$/){blank++} else {for(i=0;i<blank;i++) print ""; blank=0; print}}' > "$tmp"
+  strip_managed_block "$file" > "$tmp"
 
   [ -s "$tmp" ] && printf '\n' >> "$tmp"
   {
@@ -120,11 +143,7 @@ remove_managed_block() {
     return 0
   fi
   tmp="$(mktemp)"
-  awk -v b="$MARKER_BEGIN" -v e="$MARKER_END" '
-    $0 == b { skip=1; next }
-    $0 == e { skip=0; next }
-    !skip
-  ' "$file" > "$tmp"
+  strip_managed_block "$file" > "$tmp"
   mv "$tmp" "$file"
   echo "Removed the mucho-texto block from: $file"
 }
@@ -200,6 +219,34 @@ install_cursor() {
   echo "agent pull it in from the description."
 }
 
+# Regenerate the checked-in adapters under dist/. These exist so someone can
+# copy a ready-made file instead of running this script at all; CI fails if
+# they drift from SKILL.md.
+build_dist() {
+  local dist="$SOURCE_DIR/dist"
+  mkdir -p "$dist"
+
+  {
+    echo "$MARKER_BEGIN"
+    echo
+    skill_body
+    echo
+    echo "$MARKER_END"
+  } > "$dist/AGENTS.md"
+
+  {
+    echo "---"
+    echo "description: $(skill_description)"
+    echo "alwaysApply: false"
+    echo "---"
+    echo
+    skill_body
+  } > "$dist/mucho-texto.mdc"
+
+  echo "Built: dist/AGENTS.md"
+  echo "Built: dist/mucho-texto.mdc"
+}
+
 install_agents_file() {
   local dest="$1" label="$2"
   if [ "$UNINSTALL" = "1" ]; then remove_managed_block "$dest"; return 0; fi
@@ -208,6 +255,11 @@ install_agents_file() {
   echo "The block is delimited by HTML comments — re-running updates it in place,"
   echo "and --uninstall removes exactly that block and nothing else."
 }
+
+if [ "$BUILD" = "1" ]; then
+  build_dist
+  exit 0
+fi
 
 case "$TARGET" in
   claude) install_claude ;;
