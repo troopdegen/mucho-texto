@@ -16,6 +16,5 @@ First public release.
 - `install.sh` with four targets — `claude`, `cursor`, `codex`, `agents` — plus `print` for
   every other harness. AGENTS.md targets write into a delimited block that updates in place
   and uninstalls cleanly.
-- CI: JSON manifest validation, SKILL.md frontmatter checks, and shellcheck.
 
 [1.0.0]: https://github.com/troopdegen/mucho-texto/releases/tag/v1.0.0
