@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "mucho-texto",
   "displayName": "Mucho Texto",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Compress a wall of text into actionable bites: what needs a decision, what is merely worth knowing, and where the full detail lives.",
   "author": {
     "name": "troopdegen",

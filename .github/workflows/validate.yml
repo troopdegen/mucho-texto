@@ -1,0 +1,97 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Manifests are valid JSON
+        run: |
+          for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json; do
+            python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$f"
+            echo "ok: $f"
+          done
+
+      - name: Manifest names match the skill directory
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          plugin = json.load(open('.claude-plugin/plugin.json'))
+          market = json.load(open('.claude-plugin/marketplace.json'))
+          entries = [p['name'] for p in market['plugins']]
+          assert plugin['name'] == 'mucho-texto', plugin['name']
+          assert entries == ['mucho-texto'], entries
+          # plugin.json pins a version, so it must be bumped for users to get updates.
+          assert 'version' in plugin, 'plugin.json must pin a version or omit it deliberately'
+          print('ok: manifests consistent, version', plugin['version'])
+          PY
+
+      - name: SKILL.md has usable frontmatter
+        run: |
+          python3 - <<'PY'
+          import re, sys
+          text = open('skills/mucho-texto/SKILL.md').read()
+          m = re.match(r'^---\n(.*?)\n---\n', text, re.S)
+          assert m, 'SKILL.md is missing YAML frontmatter'
+          fm = m.group(1)
+          name = re.search(r'^name:\s*(\S+)', fm, re.M)
+          desc = re.search(r'^description:\s*(.+?)(?=\n[a-zA-Z_]+:|\Z)', fm, re.S | re.M)
+          assert name and name.group(1) == 'mucho-texto', 'frontmatter name must be mucho-texto'
+          assert desc, 'frontmatter is missing a description'
+          d = ' '.join(desc.group(1).split())
+          assert len(d) <= 1024, f'description is {len(d)} chars, over the 1024 limit'
+          print(f'ok: name={name.group(1)} description={len(d)} chars')
+          PY
+
+      - name: shellcheck
+        run: shellcheck install.sh
+
+      - name: dist/ is in sync with SKILL.md
+        run: |
+          ./install.sh --build
+          if ! git diff --exit-code -- dist/; then
+            echo "::error::dist/ is stale. Run ./install.sh --build and commit the result."
+            exit 1
+          fi
+
+      - name: dist/ matches what install.sh writes
+        run: |
+          set -eux
+          work="$(mktemp -d)"; repo="$PWD"
+          cd "$work"
+          "$repo/install.sh" --target agents --yes
+          diff AGENTS.md "$repo/dist/AGENTS.md"
+          "$repo/install.sh" --target cursor --yes
+          diff .cursor/rules/mucho-texto.mdc "$repo/dist/mucho-texto.mdc"
+
+      - name: install.sh round-trips every target
+        run: |
+          set -eux
+          work="$(mktemp -d)"; repo="$PWD"
+          cd "$work"
+
+          printf '# Project\n\nHouse rules.\n' > AGENTS.md
+          cp AGENTS.md AGENTS.md.orig
+          "$repo/install.sh" --target agents --yes
+          "$repo/install.sh" --target agents --yes   # must stay idempotent
+          test "$(grep -c 'BEGIN mucho-texto' AGENTS.md)" = 1
+          "$repo/install.sh" --target agents --uninstall
+          diff AGENTS.md AGENTS.md.orig
+
+          "$repo/install.sh" --target cursor --yes
+          test -f .cursor/rules/mucho-texto.mdc
+          grep -q '^alwaysApply: false$' .cursor/rules/mucho-texto.mdc
+
+          CLAUDE_SKILLS_DIR="$work/skills" "$repo/install.sh" --target claude --yes
+          diff "$work/skills/mucho-texto/SKILL.md" "$repo/skills/mucho-texto/SKILL.md"
+          CLAUDE_SKILLS_DIR="$work/skills" "$repo/install.sh" --target claude --uninstall
+          test ! -e "$work/skills/mucho-texto"
+
+          "$repo/install.sh" --target print | head -1
