@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "mucho-texto",
+  "description": "A one-plugin marketplace for the mucho-texto skill.",
+  "owner": {
+    "name": "troopdegen",
+    "url": "https://github.com/troopdegen"
+  },
+  "plugins": [
+    {
+      "name": "mucho-texto",
+      "source": "./",
+      "description": "Compress a wall of text into actionable bites: what needs a decision, what is merely worth knowing, and where the full detail lives.",
+      "category": "productivity",
+      "tags": ["summarization", "brevity", "reporting", "agent-output"]
+    }
+  ]
+}
